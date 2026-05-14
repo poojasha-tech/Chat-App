@@ -15,17 +15,19 @@ app.use(express.static(path.join(__dirname, "../public")));
 // Create an HTTP server
 const server = http.createServer(app);
 // Create a Socket.IO server and attach it to the HTTP server
-const io = new Server(server, {
-  cors: {
-    origin: "http://localhost:3000",
-  }
-}
-
-);
+// const io = new Server(server, {
+//   cors: {
+//     origin: "http://localhost:3000",
+//   }
+// });
+// CORS dropped: frontend is served from the same origin as the socket server,
+// so the browser never makes a cross-origin Socket.IO handshake.
+const io = new Server(server);
 app.get("/", (req, res) => {
   //res.send("Hello from Express + Socket.IO");
   res.sendFile(path.join(__dirname, "../public/index.html"));
 });
+
 
 // Socket logic
 const rooms = {};
@@ -52,11 +54,16 @@ io.on("connection", (socket) => {
   })
 
 
+  socket.on("typing", () => {
+    socket.to(socket.room).emit("typing", socket.username);
+  });
+
   //send message to everyone ,, broadcast inside selested room only
   socket.on("chatMessage", ({ room, message }) => {
     io.to(room).emit("message", `(${socket.username}) : ${message}`);
 
   });
+
 
   socket.on("disconnect", () => {
     const { username, room } = socket;
@@ -75,8 +82,12 @@ io.on("connection", (socket) => {
 });
 
 
-server.listen(3000, () => {
-  console.log("Server running on port 3000");
+// server.listen(3000, () => {
+//   console.log("Server running on port 3000");
+// });
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
 
 // app.listen(PORT, () => {

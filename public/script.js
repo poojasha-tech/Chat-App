@@ -1,4 +1,7 @@
-const socket = io("http://localhost:3000");
+// const socket = io("http://localhost:3000");
+// Connect to whatever origin served this page so the same code works in
+// localhost, staging, and production without recompiling the client.
+const socket = io();
 let username = "";
 let currentRoom = "";
 
@@ -19,12 +22,19 @@ function joinRoom() {
 
 socket.on("roomUsers", (users) => {
   const usersList = document.getElementById("users");
-
-  usersList.innerHTML = ""; // clear old list
+  usersList.innerHTML = "";
 
   users.forEach((user) => {
     const li = document.createElement("li");
-    li.textContent = user;
+
+    if (user === username) {
+      li.textContent = `${user} (You)`;
+      li.style.fontWeight = "bold";
+      li.style.color = "green";
+    } else {
+      li.textContent = user;
+    }
+
     usersList.appendChild(li);
   });
 });
@@ -32,6 +42,12 @@ socket.on("roomUsers", (users) => {
 function sendMessage() {
     const input = document.getElementById("messageInput");
     const message = input.value.trim();
+
+    input.addEventListener("input", () => {
+        if(input.value.trim() !== ""){
+            socket.emit("typing");
+        }
+    });
 
     if (!currentRoom) return alert("Join a room first");
     if (!message) return alert("Type something");
@@ -43,6 +59,17 @@ function sendMessage() {
 
     input.value = "";
 }
+
+socket.on("typing", (user) => {
+  const typing = document.getElementById("typing");
+
+  typing.textContent = `${user} is typing...`;
+
+  // remove after short delay
+  setTimeout(() => {
+    typing.textContent = "";
+  }, 1000);
+});
 
 socket.on("message", (msg) => {
     const chat = document.getElementById("chat");
