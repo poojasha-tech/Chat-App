@@ -39,15 +39,15 @@ socket.on("roomUsers", (users) => {
   });
 });
 
+document.getElementById("messageInput").addEventListener("input", (e) => {
+    if (currentRoom && e.target.value.trim() !== "") {
+        socket.emit("typing");
+    }
+});
+
 function sendMessage() {
     const input = document.getElementById("messageInput");
     const message = input.value.trim();
-
-    input.addEventListener("input", () => {
-        if(input.value.trim() !== ""){
-            socket.emit("typing");
-        }
-    });
 
     if (!currentRoom) return alert("Join a room first");
     if (!message) return alert("Type something");
