@@ -1,0 +1,228 @@
+@startuml
+title Real-Time Chat App — HTTP + Socket.IO Flow
+
+actor "User A\n(Browser Tab 1)" as UA
+actor "User B\n(Browser Tab 2)" as UB
+participant "Frontend\n(public/script.js\n+ index.html)" as FE
+participant "Express App\n(Backend/app.js)" as EX
+participant "HTTP Server\n(http.createServer)" as HS
+participant "Socket.IO Server\n(io)" as IO
+database "In-memory state\nrooms = { roomName: [users] }" as RM
+
+== 1. Initial HTTP Page Load ==
+
+UA -> EX : GET http://localhost:3000/
+note right of EX
+  Route: app.get("/")
+  Sends public/index.html
+  via res.sendFile()
+end note
+EX --> UA : 200 OK + index.html
+
+UA -> EX : GET /style.css
+note left of EX
+  Served by
+  express.static("../public")
+  middleware (app.js:13)
+end note
+EX --> UA : 200 OK + style.css
+
+UA -> EX : GET /script.js
+EX --> UA : 200 OK + script.js
+
+UA -> EX : GET /socket.io/socket.io.js
+note right of EX
+  Auto-injected by Socket.IO
+  server when attached to
+  the http.Server instance
+end note
+EX --> UA : 200 OK + client lib
+
+== 2. Optional alternate page ==
+
+UA -> EX : GET /danish
+note right of EX
+  Route: app.get("/danish")
+  Returns public/danish.html
+end note
+EX --> UA : 200 OK + danish.html
+
+== 3. WebSocket Handshake ==
+
+FE -> IO : io("http://localhost:3000")
+note left of FE
+  script.js:1
+  Opens Socket.IO
+  connection on page load
+end note
+
+IO -> IO : io.on("connection", socket => ...)
+note right of IO
+  app.js:37
+  console.log("User connected:", socket.id)
+  Each socket gets unique id
+end note
+
+IO --> FE : "connect" event (socket.id)
+note left of FE
+  script.js:79
+  socket.on("connect")
+  logs "Connected: <id>"
+end note
+
+== 4. Joining a Room ==
+
+UA -> FE : Click "Join Room"\n(usernameInput, roomInput)
+FE -> FE : joinRoom()
+note right of FE
+  script.js:5
+  Validates inputs,
+  stores currentRoom & username
+end note
+
+FE -> IO : socket.emit("joinRoom",\n{ room, username })
+
+IO -> IO : socket.on("joinRoom")
+note right of IO
+  app.js:41
+  - socket.username = username
+  - socket.room = room
+  - socket.join(room)
+end note
+
+IO -> RM : rooms[room] = rooms[room] || []\nrooms[room].push(username)
+note left of RM
+  Server keeps an
+  in-memory map of
+  active users per room
+end note
+
+IO -> FE : io.to(room).emit("roomUsers", rooms[room])
+note right of IO
+  Broadcasts updated user
+  list to ALL sockets in room
+  (including the joiner)
+end note
+IO -> UB : (same broadcast)
+
+FE -> FE : socket.on("roomUsers", users => ...)
+note left of FE
+  script.js:20
+  Renders <li> per user;
+  marks current user as
+  "(You)" in bold green
+end note
+
+IO -> UB : socket.to(room).emit("message",\n"NEW USER <name> JOINED <room>")
+note right of IO
+  app.js:56
+  socket.to(room) excludes the
+  sender — only OTHERS see
+  the join notice
+end note
+
+UB -> FE : socket.on("message", msg)
+note left of FE
+  script.js:71
+  Appends <div> to #chat
+  and auto-scrolls
+end note
+
+== 5. Typing Indicator ==
+
+UA -> FE : Keystroke in #messageInput
+note right of FE
+  script.js:43
+  input listener attached
+  inside sendMessage()
+  (re-attached each call)
+end note
+FE -> IO : socket.emit("typing")
+
+IO -> IO : socket.on("typing")
+note right of IO
+  app.js:60
+  Uses socket.room saved
+  during joinRoom
+end note
+
+IO -> UB : socket.to(socket.room).emit("typing", username)
+note right of IO
+  Excludes sender so the
+  typer doesn't see their
+  own indicator
+end note
+
+UB -> FE : socket.on("typing", user)
+note left of FE
+  script.js:60
+  Sets #typing text
+  Clears after 1000ms
+end note
+
+== 6. Sending a Chat Message ==
+
+UA -> FE : Click "Send"
+FE -> FE : sendMessage()
+note right of FE
+  script.js:39
+  Validates room + non-empty
+  message, then emits
+end note
+FE -> IO : socket.emit("chatMessage",\n{ room, message })
+
+IO -> IO : socket.on("chatMessage")
+note right of IO
+  app.js:65
+  Formats as
+  "(<username>) : <message>"
+end note
+
+IO -> FE : io.to(room).emit("message", payload)
+IO -> UB : (same broadcast)
+note right of IO
+  io.to(room) INCLUDES sender
+  so the writer also sees
+  their own message rendered
+end note
+
+FE -> FE : Append <div> to #chat
+UB -> FE : Append <div> to #chat
+
+== 7. Disconnect / Leave ==
+
+UA -> IO : Tab closed / network drop
+IO -> IO : socket.on("disconnect")
+note right of IO
+  app.js:71
+  Reads socket.username
+  and socket.room set
+  during joinRoom
+end note
+
+IO -> RM : rooms[room] =\nrooms[room].filter(u => u !== username)
+note left of RM
+  Removes the leaving user
+  from the room roster
+end note
+
+IO -> UB : io.to(room).emit("roomUsers", rooms[room])
+note right of IO
+  Updated list goes to all
+  remaining sockets in room
+end note
+UB -> FE : Re-render users list
+
+IO -> UB : socket.to(room).emit("message", "<username> left")
+UB -> FE : Append leave notice to #chat
+
+== 8. Connection Errors ==
+
+FE -> IO : (TCP/WS handshake fails)
+IO --> FE : "connect_error"
+note left of FE
+  script.js:83
+  Logs "Connection failed"
+end note
+
+@enduml
