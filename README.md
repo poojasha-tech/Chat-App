@@ -1,50 +1,36 @@
 # Real-Time Chat App
+#### Video Demo: https://youtu.be/biDBVb_F3vw
+#### Description:
 
-A minimal multi-room chat server built with **Node.js**, **Express**, and **Socket.IO**. Users pick a username, join a named room, and exchange messages in real time with typing indicators and a live user list.
+This is a small multi-room chat app I built as my CS50x final project. You pick a username, join a room by name, and start talking to whoever else is in that room. There's a live list of who's online in the room, a "user is typing…" indicator, and system messages when people join or leave so the room doesn't feel empty when you walk in. The whole thing runs in Docker, so getting it up on a fresh machine is one command.
 
-## Features
+I picked this project because CS50's web track in Weeks 8 and 9 ends at the Flask request/response model, and I kept wondering what came next. Chat is sort of the obvious answer - it's the thing you can't really build cleanly on plain HTTP, because you need the server to push messages without the client asking first. So I went and learned Socket.IO, which is the WebSocket library most Node projects reach for, and built this on top of it.
 
-- Multi-room chat — messages are broadcast only inside the joined room
-- Live user list per room (joins and disconnects update it)
-- "User is typing…" indicator
-- System messages on join / leave
-- Dockerized for one-command local runs
+## What it does
 
-## Tech Stack
+- Multi-room chat - your messages only go to people in your room, not everyone connected to the server
+- A live user list that updates whenever someone joins or leaves
+- A typing indicator
+- System messages on join and leave
+- Runs in Docker with one command
+
+## What it's built with
 
 - **Backend:** Node.js, Express 5, Socket.IO 4
-- **Frontend:** Vanilla HTML / CSS / JS (no framework, no build step)
+- **Frontend:** plain HTML, CSS, and JavaScript - no React, no build step
 - **Container:** Docker + docker-compose
-- **Module system:** ES modules
 
-## Project Layout
+## Running it
 
-```
-.
-├── Backend/
-│   ├── app.js          # Express + Socket.IO server, room state, event handlers
-│   └── package.json
-├── public/
-│   ├── index.html      # Single-page UI
-│   ├── script.js       # Socket.IO client, DOM wiring
-│   └── style.css
-├── docs/
-│   └── flow.plantuml   # Sequence diagram of join / message / disconnect
-├── Dockerfile
-└── docker-compose.yml
-```
-
-## Running Locally
-
-### With Docker (recommended)
+The easy way, with Docker:
 
 ```bash
 docker compose up --build
 ```
 
-Then open <http://localhost:3000>.
+Then open _http://localhost:3000_
 
-### Without Docker
+Without Docker:
 
 ```bash
 cd Backend
@@ -52,35 +38,36 @@ npm install
 npm run dev
 ```
 
-The server listens on `PORT` (default `3000`) and serves `public/` as static assets, so the frontend and Socket.IO live on the same origin.
+It listens on port 3000 by default. The frontend and Socket.IO live on the same origin, so I never had to deal with CORS.
 
-## How It Works
+## How a message actually moves
 
-1. Client loads `index.html`, which loads `script.js` and the Socket.IO client.
-2. User enters a username + room and clicks **Join Room** → client emits `joinRoom`.
-3. Server adds the socket to a Socket.IO room and tracks the username in an in-memory `rooms` map.
-4. Server broadcasts the updated user list (`roomUsers`) and a system message to the room.
-5. `chatMessage`, `typing`, and `disconnect` events update room state and re-broadcast.
+When you load the page, the client pulls in `script.js` and the Socket.IO client library. You type a username and a room name and hit Join Room, and the client emits a `joinRoom` event. The server adds your socket to that Socket.IO room and stores your username in a plain JS object called `rooms`, keyed by room name. Then it broadcasts an updated user list and a "X has joined" message to everyone in the room. After that, `chatMessage`, `typing`, and `disconnect` events all do the same kind of thing: update the room state on the server, then broadcast the change back out. The PlantUML sequence diagram in `docs/` shows the full flow if you'd rather see it visually.
 
-See `docs/flow.plantuml` for a sequence diagram.
+Most of the server logic lives in `Backend/app.js`. The frontend is just `public/index.html`, `public/script.js`, and `public/style.css`. The client renders messages with `textContent` rather than `innerHTML`, on purpose - more on that below.
 
-## Known Limitations
+## Things I had to decide
 
-These are deliberate scope cuts for a demo, not bugs. Calling them out so anyone reading the repo knows what would need to change before this is production-shaped.
+**Socket.IO vs. raw WebSockets.** Going with raw `ws` would have been more "from scratch," but Socket.IO gives you rooms, automatic reconnection, and transport fallbacks for free. Rebuilding those wouldn't have taught me anything I wanted to learn, so I went with Socket.IO.
 
-- **No persistence.** Room membership and messages live in a plain JS object (`const rooms = {}`) in the server process. A container restart wipes everything — no message history, no record of past rooms.
-- **No authentication.** Usernames are self-claimed in a text field. Anyone can impersonate anyone; there is no session, token, or identity check.
-- **Single-instance only.** Because room state is in-process memory, you cannot horizontally scale. Two replicas behind a load balancer would each hold a different view of who is in which room, and messages would not cross between them.
-- **No input sanitization beyond `trim()`** on the client. Messages are rendered with `textContent` (so no XSS via the message body), but there is no rate limiting, length cap, or profanity / abuse handling.
-- **No tests.**
+**No database.** I thought about adding Postgres for message history, but the point of the project was learning real-time stuff, not bolting on a database I already knew. So I kept the room state in memory. The trade-off is in "Known Limitations" below - I want it to be clear that it's a deliberate choice, not something I forgot.
 
-## Future Work
+**No frontend framework.** It's two screens. Plain JS reads top to bottom and that's what I wanted.
 
-In rough priority order if this were to evolve past a demo:
+**`textContent`, not `innerHTML`.** The one piece of security I really cared about. Even though there's no auth, a user shouldn't be able to drop a `<script>` tag into another user's browser. Using `textContent` makes that impossible at the rendering layer.
 
-1. **Persistence** — store messages and room metadata in Postgres or MongoDB; load recent history on join.
-2. **Auth** — sign-in (OAuth or email+password), signed session tokens, server-side identity instead of trusting the client-supplied username.
-3. **Horizontal scaling** — wire up the [Socket.IO Redis adapter](https://socket.io/docs/v4/redis-adapter/) so multiple Node instances share pub/sub for broadcasts, with Redis (or another shared store) as the source of truth for room membership.
-4. **Rate limiting** on the `chatMessage` and `typing` events to mitigate spam / abuse.
-5. **Tests** — at minimum integration tests against a real Socket.IO client covering join, message, typing, and disconnect flows.
-6. **Observability** — structured logs, a `/healthz` endpoint, basic metrics (connected sockets, messages/sec).
+**Docker from day one.** I didn't want anyone - including future me - to have to fight with Node versions just to run the thing.
+
+## What it doesn't do
+
+These are things I left out on purpose, and calling them out so it's clear they aren't bugs:
+
+- **No persistence.** Restart the container and everything is gone. No message history, no record of past rooms.
+- **No auth.** Usernames are whatever you type in the box. You can absolutely pretend to be someone else.
+- **Single instance only.** Because room state is in memory, you can't run two copies of the server behind a load balancer - they'd disagree about who's in which room.
+- **Barely any input handling.** Messages get `.trim()` on the client and that's it. No length cap, no rate limiting.
+- **No tests.** I know.
+
+## If I kept working on it
+
+Roughly in the order I'd actually do them: persistence first (Postgres or Mongo, plus loading recent history on join), then real auth with signed session tokens instead of trusting the form field, then horizontal scaling with the Socket.IO Redis adapter so multiple Node instances can share broadcasts. After that, rate limiting on `chatMessage` and `typing`, integration tests covering the four main events, and finally some basic observability - structured logs, a `/healthz` endpoint, and counters for connected sockets and messages per second.
