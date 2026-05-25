@@ -4,6 +4,7 @@ import http from 'http';
 import { Server } from 'socket.io';
 import path from "path";
 import { fileURLToPath } from "url";
+import { db } from './db.js';
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -60,8 +61,11 @@ io.on("connection", (socket) => {
 
   //send message to everyone ,, broadcast inside selested room only
   socket.on("chatMessage", ({ room, message }) => {
-    io.to(room).emit("message", `(${socket.username}) : ${message}`);
+    db.prepare(
+      'INSERT INTO messages (room, username, body, created_at) VALUES (?, ?, ?, ?)'
+    ).run(room, socket.username, message, Date.now());
 
+    io.to(room).emit("message", `(${socket.username}) : ${message}`);
   });
 
 

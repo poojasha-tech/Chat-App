@@ -1,1 +1,6 @@
 Backend/node_modules
+
+# Local SQLite dev DB and WAL companions
+Backend/chat.db
+Backend/chat.db-shm
+Backend/chat.db-wal
