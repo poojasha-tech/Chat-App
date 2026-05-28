@@ -35,11 +35,17 @@ const rooms = {};
 io.on("connection", (socket) => {
   console.log("User connected:", socket.id);
 
-  // join room 
+  // join room
   socket.on("joinRoom", ({ room, username }) => {
     socket.username = username;
     socket.room = room;
     socket.join(room);
+
+    // send last 50 messages to this socket only (oldest-first for chronological render)
+    const history = db.prepare(
+      'SELECT username, body FROM messages WHERE room = ? ORDER BY created_at DESC LIMIT 50'
+    ).all(room).reverse();
+    socket.emit("history", history.map(r => `(${r.username}) : ${r.body}`));
 
     if (!rooms[room]) {
       rooms[room] = [];

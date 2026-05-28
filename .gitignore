@@ -1,6 +1,13 @@
 Backend/node_modules
 
+# Env files (defensive — JWT_SECRET arrives in step 3)
+Backend/.env
+.env
+
 # Local SQLite dev DB and WAL companions
 Backend/chat.db
 Backend/chat.db-shm
 Backend/chat.db-wal
+
+# macOS
+.DS_Store

@@ -71,6 +71,17 @@ socket.on("typing", (user) => {
   }, 1000);
 });
 
+socket.on("history", (rows) => {
+    const chat = document.getElementById("chat");
+    chat.innerHTML = ""; // clear so re-joining doesn't stack old messages
+    rows.forEach((msg) => {
+        const div = document.createElement("div");
+        div.textContent = msg;
+        chat.appendChild(div);
+    });
+    chat.scrollTop = chat.scrollHeight;
+});
+
 socket.on("message", (msg) => {
     const chat = document.getElementById("chat");
     const div = document.createElement("div");
