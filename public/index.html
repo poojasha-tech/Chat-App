@@ -10,20 +10,45 @@
 
 <body>
     <h1>Chat Rooms</h1>
-    <input id="usernameInput" placeholder="Enter username">
-    <input id="roomInput" placeholder="Enter room name">
-    <button onclick="joinRoom()" id="joinBtn"> Join Room</button>
-    <div id="users-in-room">
-        <h3>Users in room:</h3>
-        <div id="users"></div>
-    </div>
 
+    <section id="auth-section" class="card" hidden>
+        <div class="auth-pane">
+            <h2>Log in</h2>
+            <input id="loginEmail" type="email" placeholder="Email">
+            <input id="loginPassword" type="password" placeholder="Password">
+            <button class="primary" onclick="doLogin()">Log in</button>
+            <p class="error" id="loginError"></p>
+        </div>
+        <div class="auth-pane">
+            <h2>Register</h2>
+            <input id="regEmail" type="email" placeholder="Email">
+            <input id="regUsername" placeholder="Username (3-20 chars)">
+            <input id="regPassword" type="password" placeholder="Password (8+ chars)">
+            <button class="primary" onclick="doRegister()">Register</button>
+            <p class="error" id="registerError"></p>
+        </div>
+    </section>
 
-    <div id="chat"></div>
-    <p id="typing"></p>
+    <section id="main-section" hidden>
+        <p class="topbar">
+            Logged in as <b id="currentUser"></b>
+            <button class="link" onclick="doLogout()">Log out</button>
+        </p>
 
-    <input id="messageInput" placeholder="Type Your Message">
-    <button onclick="sendMessage()" id="sendBtn"> Send </button>
+        <input id="roomInput" placeholder="Enter room name">
+        <button onclick="joinRoom()" id="joinBtn">Join Room</button>
+
+        <div id="users-in-room">
+            <h3>Users in room:</h3>
+            <div id="users"></div>
+        </div>
+
+        <div id="chat"></div>
+        <p id="typing"></p>
+
+        <input id="messageInput" placeholder="Type Your Message">
+        <button onclick="sendMessage()" id="sendBtn"> Send </button>
+    </section>
 
     <script src="/socket.io/socket.io.js"></script>
     <script src="script.js"></script>
