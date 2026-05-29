@@ -57,3 +57,19 @@ export function cookieOptions() {
     path: '/',
   };
 }
+
+// Socket.IO handshake bypasses Express middleware, so cookie-parser doesn't apply.
+// We get the raw Cookie header string and parse it ourselves.
+export function parseCookieHeader(header) {
+  const out = {};
+  if (!header) return out;
+
+  for (const piece of header.split(';')) {
+    const idx = piece.indexOf('=');
+    if (idx === -1) continue;
+    const name = piece.slice(0, idx).trim();
+    const value = piece.slice(idx + 1).trim();
+    if (name) out[name] = decodeURIComponent(value);
+  }
+  return out;
+}
