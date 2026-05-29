@@ -6,7 +6,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import cookieParser from 'cookie-parser';
 import { db } from './db.js';
-import { hashPassword, verifyPassword, signToken, verifyToken, cookieOptions } from './auth.js';
+import { hashPassword, verifyPassword, signToken, verifyToken, cookieOptions, parseCookieHeader } from './auth.js';
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -92,6 +92,18 @@ const server = http.createServer(app);
 // CORS dropped: frontend is served from the same origin as the socket server,
 // so the browser never makes a cross-origin Socket.IO handshake.
 const io = new Server(server);
+
+// Socket.IO auth middleware — runs once per handshake, before any event handlers.
+// Reads the JWT from the cookie, verifies it, attaches socket.user.
+// After this runs, every handler can trust socket.user.username.
+io.use((socket, next) => {
+  const cookies = parseCookieHeader(socket.handshake.headers.cookie);
+  const payload = verifyToken(cookies.auth);
+  if (!payload) return next(new Error('unauthorized'));
+  socket.user = { id: payload.id, username: payload.username };
+  next();
+});
+
 app.get("/", (req, res) => {
   //res.send("Hello from Express + Socket.IO");
   res.sendFile(path.join(__dirname, "../public/index.html"));
@@ -101,11 +113,11 @@ app.get("/", (req, res) => {
 // Socket logic
 const rooms = {};
 io.on("connection", (socket) => {
-  console.log("User connected:", socket.id);
+  console.log("User connected:", socket.id, "as", socket.user.username);
 
-  // join room
-  socket.on("joinRoom", ({ room, username }) => {
-    socket.username = username;
+  // join room — username comes from the verified JWT (socket.user), NOT the client payload
+  socket.on("joinRoom", ({ room }) => {
+    const username = socket.user.username;
     socket.room = room;
     socket.join(room);
 
@@ -130,26 +142,27 @@ io.on("connection", (socket) => {
 
 
   socket.on("typing", () => {
-    socket.to(socket.room).emit("typing", socket.username);
+    socket.to(socket.room).emit("typing", socket.user.username);
   });
 
   //send message to everyone ,, broadcast inside selested room only
   socket.on("chatMessage", ({ room, message }) => {
     db.prepare(
       'INSERT INTO messages (room, username, body, created_at) VALUES (?, ?, ?, ?)'
-    ).run(room, socket.username, message, Date.now());
+    ).run(room, socket.user.username, message, Date.now());
 
-    io.to(room).emit("message", `(${socket.username}) : ${message}`);
+    io.to(room).emit("message", `(${socket.user.username}) : ${message}`);
   });
 
 
   socket.on("disconnect", () => {
-    const { username, room } = socket;
+    const username = socket.user.username;
+    const room = socket.room;
     if (room && rooms[room]) {
       // remove user
       rooms[room] = rooms[room].filter(u => u !== username);
 
-      // update list to everyone 
+      // update list to everyone
       io.to(room).emit("roomUsers", rooms[room]);
 
       // notify others
