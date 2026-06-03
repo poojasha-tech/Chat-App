@@ -23,6 +23,45 @@ function isValidEmail(s)    { return typeof s === 'string' && /^[^\s@]+@[^\s@]+\
 function isValidUsername(s) { return typeof s === 'string' && /^[a-zA-Z0-9_-]{3,20}$/.test(s); }
 function isValidPassword(s) { return typeof s === 'string' && s.length >= 8; }
 
+const ROOM_NAME_RE = /^[a-zA-Z0-9_-]{1,40}$/;
+function isValidRoomName(s)     { return typeof s === 'string' && ROOM_NAME_RE.test(s); }
+function isValidRoomPassword(s) { return typeof s === 'string' && s.length >= 8; }
+
+// Find an existing room and verify the password, OR create a fresh room with this password.
+// scrypt is async, better-sqlite3 transactions are sync — can't wrap the flow in one transaction.
+// Race handling: PRIMARY KEY constraint serializes concurrent INSERTs; loser falls back to verify.
+async function findOrCreateRoom(roomName, password, userId) {
+  const existing = db.prepare(
+    'SELECT password_hash, created_by FROM rooms WHERE name = ?'
+  ).get(roomName);
+
+  if (existing) {
+    const ok = await verifyPassword(password, existing.password_hash);
+    if (!ok) return { ok: false, reason: 'wrong password' };
+    return { ok: true, isCreator: existing.created_by === userId };
+  }
+
+  // room doesn't exist — try to create
+  const passwordHash = await hashPassword(password);
+  try {
+    db.prepare(
+      'INSERT INTO rooms (name, password_hash, created_by, created_at) VALUES (?, ?, ?, ?)'
+    ).run(roomName, passwordHash, userId, Date.now());
+    return { ok: true, isCreator: true };
+  } catch (err) {
+    if (err.code === 'SQLITE_CONSTRAINT_PRIMARYKEY') {
+      // someone else inserted the same room between our SELECT and INSERT
+      const fresh = db.prepare(
+        'SELECT password_hash, created_by FROM rooms WHERE name = ?'
+      ).get(roomName);
+      const ok = await verifyPassword(password, fresh.password_hash);
+      if (!ok) return { ok: false, reason: 'wrong password' };
+      return { ok: true, isCreator: fresh.created_by === userId };
+    }
+    throw err;
+  }
+}
+
 // TODO: rate-limit /login and /register too — the socket bucket (step 5) doesn't cover HTTP
 
 app.post('/register', async (req, res) => {
@@ -115,8 +154,28 @@ const rooms = {};
 io.on("connection", (socket) => {
   console.log("User connected:", socket.id, "as", socket.user.username);
 
-  // join room — username comes from the verified JWT (socket.user), NOT the client payload
-  socket.on("joinRoom", ({ room }) => {
+  // join room — username comes from the verified JWT (socket.user), NOT the client payload.
+  // First joiner of a fresh room sets the password; later joiners must match.
+  socket.on("joinRoom", async ({ room, password }) => {
+    // 1) validate inputs (cheap; do before any scrypt work)
+    if (!isValidRoomName(room)) {
+      return socket.emit('joinError', { reason: 'invalid room name' });
+    }
+    if (!isValidRoomPassword(password)) {
+      return socket.emit('joinError', { reason: 'room password must be at least 8 characters' });
+    }
+
+    // 2) create-or-verify the room (handles the async hash + race condition)
+    let result;
+    try {
+      result = await findOrCreateRoom(room, password, socket.user.id);
+    } catch (err) {
+      console.error('joinRoom error:', err);
+      return socket.emit('joinError', { reason: 'server error' });
+    }
+    if (!result.ok) return socket.emit('joinError', { reason: result.reason });
+
+    // 3) existing join flow
     const username = socket.user.username;
     socket.room = room;
     socket.join(room);

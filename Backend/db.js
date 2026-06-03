@@ -22,6 +22,14 @@ db.exec(`
     created_at INTEGER NOT NULL
   );
 
+  CREATE TABLE IF NOT EXISTS rooms (
+    name TEXT PRIMARY KEY,
+    password_hash TEXT NOT NULL,
+    created_by INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY (created_by) REFERENCES users(id)
+  );
+
   CREATE TABLE IF NOT EXISTS messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     room TEXT NOT NULL,
